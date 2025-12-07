@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, AlertCircle } from "lucide-react";
 
 interface Panel {
   panel_number: number;
@@ -9,12 +9,100 @@ interface Panel {
   dialogue: string;
   caption: string;
   image_url?: string;
+  status?: 'pending' | 'generating' | 'completed' | 'failed';
 }
 
 interface ComicStory {
   title: string;
   style_description?: string;
   panels: Panel[];
+}
+
+function ComicImagePanel({ panel }: { panel: Panel }) {
+  const [isImageLoading, setIsImageLoading] = useState(true);
+  const [imageHasError, setImageHasError] = useState(false);
+
+  // Determine effective state
+  const isGenerating = panel.status === 'generating';
+  const isPending = panel.status === 'pending';
+  const isFailed = panel.status === 'failed';
+  const isCompleted = panel.status === 'completed';
+
+  // We are "loading" if generating OR (completed but image still loading)
+  // However, we only show the skeleton if we are actively working on it.
+  const showLoading = isGenerating || (isCompleted && isImageLoading && !imageHasError);
+  
+  // Show error if API failed OR image load failed
+  const showError = isFailed || (isCompleted && imageHasError);
+
+  // Reset loading state when url changes (if multiple generations were possible, but here it's linear)
+  // We don't need an effect because the key={idx} in the parent loop ensures a fresh component if we re-render list? 
+  // No, key is index. If we regenerate, we might reuse component. 
+  // But here we generate once.
+
+  return (
+    <div className="flex-grow relative w-full h-full overflow-hidden bg-gray-100">
+      
+      {/* 1. Loaded Image */}
+      {isCompleted && panel.image_url && !imageHasError && (
+        <img 
+          src={panel.image_url} 
+          alt={panel.image_prompt} 
+          className={`w-full h-full object-cover transition-opacity duration-500 ${isImageLoading ? 'opacity-0' : 'opacity-100'}`}
+          onLoad={() => setIsImageLoading(false)}
+          onError={() => {
+            setImageHasError(true);
+            setIsImageLoading(false);
+          }}
+        />
+      )}
+
+      {/* 2. Loading State (Skeleton) */}
+      {showLoading && (
+        <div className="absolute inset-0 bg-gray-300 animate-pulse flex flex-col items-center justify-center text-center p-4">
+          <p className="font-comic font-bold text-gray-500 text-xl tracking-widest animate-bounce">
+            DRAWING...
+          </p>
+          <p className="font-comic text-xs text-gray-400 mt-2 px-4 line-clamp-2 max-w-full">
+            {panel.image_prompt}
+          </p>
+        </div>
+      )}
+
+      {/* 3. Error State */}
+      {showError && (
+        <div className="absolute inset-0 bg-red-900 flex flex-col items-center justify-center p-4 border-4 border-red-950">
+           <AlertCircle className="w-12 h-12 text-red-500 mb-2" />
+           <p className="font-comic font-bold text-red-500 uppercase text-lg tracking-widest">
+             TRANSMISSION FAILED!
+           </p>
+        </div>
+      )}
+
+      {/* 4. Pending State (Waiting) */}
+      {isPending && (
+         <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-100 p-4">
+            <p className="font-comic text-gray-400 text-sm mb-2">WAITING...</p>
+         </div>
+      )}
+
+      {/* Overlays: Caption & Dialogue (Always visible unless failed? User said "overlay correctly on top of the loaded image") */}
+      {!showError && !isPending && (
+        <>
+          {panel.caption && (
+            <div className="caption-box">
+              {panel.caption}
+            </div>
+          )}
+          {panel.dialogue && (
+            <div className="speech-bubble bottom-4 right-4 max-w-[80%]">
+              {panel.dialogue}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
 }
 
 export default function Home() {
@@ -49,30 +137,39 @@ export default function Home() {
       
       // Step 2: Generate Images (Client-side orchestration)
       setStep("generating-images");
-      const newPanels = [...storyData.panels];
-      
+      const newPanels = storyData.panels.map(p => ({ ...p, status: 'pending' as const }));
+      setStory({ ...storyData, panels: newPanels });
+
+      // Process panels sequentially
       for (let i = 0; i < newPanels.length; i++) {
         setCurrentPanelIndex(i + 1);
-        const panel = newPanels[i];
         
+        // Update status to generating
+        newPanels[i].status = 'generating';
+        setStory({ ...storyData, panels: [...newPanels] });
+
         try {
           const imageRes = await fetch("/api/generate-image", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ prompt: panel.image_prompt }),
+            body: JSON.stringify({ prompt: newPanels[i].image_prompt }),
           });
           
           if (imageRes.ok) {
             const imageData = await imageRes.json();
             newPanels[i].image_url = imageData.url;
-            // Update state incrementally to show progress
-            setStory({ ...storyData, panels: [...newPanels] });
+            newPanels[i].status = 'completed';
           } else {
              console.error(`Failed to generate image for panel ${i+1}`);
+             newPanels[i].status = 'failed';
           }
         } catch (err) {
           console.error(err);
+          newPanels[i].status = 'failed';
         }
+        
+        // Update state with result
+        setStory({ ...storyData, panels: [...newPanels] });
       }
       
       setStep("completed");
@@ -84,9 +181,39 @@ export default function Home() {
     }
   };
 
+    const getPanelClassName = (index: number) => {
+    const baseClasses = "comic-panel relative overflow-hidden flex flex-col transition-all duration-300 hover:scale-[1.01] bg-white";
+    
+    // Default mobile layout (all square/standard) overridden by md: styles for the bento layout
+    switch(index) {
+      case 0: // Hero: Top Left (2x2)
+        return `${baseClasses} md:col-span-2 md:row-span-2 min-h-[400px]`;
+      case 1: // Stack 1: Top Right
+        return `${baseClasses} md:col-span-1 md:row-span-1 min-h-[200px]`;
+      case 2: // Stack 2: Middle Right
+        return `${baseClasses} md:col-span-1 md:row-span-1 min-h-[200px]`;
+      case 3: // Panoramic: Full Width
+        return `${baseClasses} md:col-span-3 md:row-span-1 aspect-[2.5/1]`;
+      case 4: 
+        return `${baseClasses} md:col-span-1 md:row-span-1 aspect-square`;
+      case 5:
+        return `${baseClasses} md:col-span-1 md:row-span-1 aspect-square`;
+      case 6:
+        return `${baseClasses} md:col-span-1 md:row-span-1 aspect-square`;
+      case 7: // Wide
+        return `${baseClasses} md:col-span-2 md:row-span-1 aspect-[2/1]`;
+      case 8:
+        return `${baseClasses} md:col-span-1 md:row-span-1 aspect-square`;
+      case 9: // Footer
+        return `${baseClasses} md:col-span-3 md:row-span-1 aspect-[3/1]`;
+      default:
+        return `${baseClasses} md:col-span-1 md:row-span-1 aspect-square`;
+    }
+  };
+
   return (
-    <main className="min-h-screen p-8 bg-gray-50 flex flex-col items-center">
-      <h1 className="text-4xl font-bold mb-8 font-comic uppercase tracking-wider text-gray-900">
+    <main className="min-h-screen p-4 md:p-8 bg-gray-100 flex flex-col items-center">
+      <h1 className="text-4xl font-bold mb-8 font-comic uppercase tracking-wider text-gray-900 drop-shadow-[2px_2px_0_rgba(255,255,255,1)]">
         Comic Generator
       </h1>
 
@@ -133,59 +260,34 @@ export default function Home() {
         </div>
       )}
 
-      {(step === "generating-story" || step === "generating-images") && (
+      {step === "generating-story" && (
         <div className="text-center mt-20">
           <Loader2 className="h-16 w-16 animate-spin mx-auto mb-4 text-black" />
           <h2 className="text-2xl font-bold font-comic">
-            {step === "generating-story" ? "Writing the script..." : `Drawing Panel ${currentPanelIndex} of 10...`}
+            Writing the script...
           </h2>
-          {story && (
-             <div className="mt-8 grid grid-cols-2 md:grid-cols-5 gap-4 opacity-50">
-               {story.panels.map((p, i) => (
-                 <div key={i} className={`aspect-square border-2 border-black bg-gray-200 ${p.image_url ? 'bg-green-200' : ''}`}>
-                 </div>
-               ))}
-             </div>
-          )}
         </div>
       )}
 
-      {(step === "completed" || (step === "generating-images" && story)) && (
-        <div className="w-full max-w-6xl mt-8">
-          {story && (
-             <>
-               <h2 className="text-3xl font-bold text-center mb-8 font-comic uppercase underline decoration-wavy decoration-yellow-400">
-                 {story.title}
-               </h2>
-               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                 {story.panels.map((panel, idx) => (
-                   <div key={idx} className="comic-panel relative aspect-[2/3] bg-white overflow-hidden">
-                     {panel.image_url ? (
-                       <img src={panel.image_url} alt={panel.image_prompt} className="w-full h-full object-cover" />
-                     ) : (
-                       <div className="w-full h-full flex items-center justify-center bg-gray-100 text-gray-400">
-                         Pending...
-                       </div>
-                     )}
-                     
-                     {/* Caption */}
-                     {panel.caption && (
-                       <div className="caption-box">
-                         {panel.caption}
-                       </div>
-                     )}
-                     
-                     {/* Dialogue - Naive positioning for now */}
-                     {panel.dialogue && (
-                       <div className="speech-bubble bottom-4 right-4 max-w-[80%]">
-                         {panel.dialogue}
-                       </div>
-                     )}
-                   </div>
-                 ))}
-               </div>
-             </>
-          )}
+      {(step === "generating-images" || step === "completed") && story && (
+        <div className="w-full max-w-5xl mt-8 p-6 md:p-12 bg-white border-4 border-black shadow-[12px_12px_0px_0px_rgba(0,0,0,1)]">
+             <h2 className="text-4xl font-bold text-center mb-12 font-comic uppercase tracking-widest underline decoration-wavy decoration-yellow-400">
+               {story.title}
+             </h2>
+             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 auto-rows-fr">
+               {story.panels.map((panel, idx) => (
+                 <div key={idx} className={getPanelClassName(idx)}>
+                   <ComicImagePanel panel={panel} />
+                   
+                   {/* Status Footer for clarity during generation */}
+                   {step === 'generating-images' && (
+                      <div className="bg-black text-white text-xs p-1 text-center font-mono">
+                        {panel.status?.toUpperCase() || 'PENDING'}
+                      </div>
+                   )}
+                 </div>
+               ))}
+             </div>
         </div>
       )}
     </main>
