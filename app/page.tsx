@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { Loader2, AlertCircle } from "lucide-react";
+import { useState, useRef } from "react";
+import { Loader2, AlertCircle, Download, RefreshCw } from "lucide-react";
+import html2canvas from 'html2canvas';
 
 interface Panel {
   panel_number: number;
@@ -114,9 +115,37 @@ export default function Home() {
   });
   const [story, setStory] = useState<ComicStory | null>(null);
   const [currentPanelIndex, setCurrentPanelIndex] = useState(0);
+  const comicRef = useRef<HTMLDivElement>(null);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setInputs({ ...inputs, [e.target.name]: e.target.value });
+  };
+
+  const handleDownload = async () => {
+    if (!comicRef.current) return;
+    
+    try {
+      const canvas = await html2canvas(comicRef.current, {
+        useCORS: true, // Important for external images (Pollinations)
+        scale: 2, // Better quality
+        backgroundColor: '#ffffff',
+      });
+      
+      const link = document.createElement('a');
+      link.download = `${story?.title.replace(/\s+/g, '-').toLowerCase() || 'comic'}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    } catch (err) {
+      console.error("Failed to download comic:", err);
+      alert("Failed to download comic. Please try again.");
+    }
+  };
+
+  const handleReset = () => {
+    setStory(null);
+    setInputs({ hero: "", villain: "", location: "" });
+    setStep("input");
+    setCurrentPanelIndex(0);
   };
 
   const generateComic = async () => {
@@ -270,7 +299,8 @@ export default function Home() {
       )}
 
       {(step === "generating-images" || step === "completed") && story && (
-        <div className="w-full max-w-5xl mt-8 p-6 md:p-12 bg-white border-4 border-black shadow-[12px_12px_0px_0px_rgba(0,0,0,1)]">
+        <div className="w-full max-w-5xl mt-8">
+          <div ref={comicRef} className="p-6 md:p-12 bg-white border-4 border-black shadow-[12px_12px_0px_0px_rgba(0,0,0,1)]">
              <h2 className="text-4xl font-bold text-center mb-12 font-comic uppercase tracking-widest underline decoration-wavy decoration-yellow-400">
                {story.title}
              </h2>
@@ -288,6 +318,27 @@ export default function Home() {
                  </div>
                ))}
              </div>
+          </div>
+          
+          {step === "completed" && (
+            <div className="mt-8 flex flex-col md:flex-row gap-4 justify-center">
+               <button
+                 onClick={handleDownload}
+                 className="flex items-center justify-center gap-2 bg-yellow-400 hover:bg-yellow-500 text-black font-bold py-3 px-8 rounded border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-y-1 hover:shadow-none transition-all"
+               >
+                 <Download className="w-5 h-5" />
+                 DOWNLOAD COMIC
+               </button>
+               
+               <button
+                 onClick={handleReset}
+                 className="flex items-center justify-center gap-2 bg-white hover:bg-gray-50 text-black font-bold py-3 px-8 rounded border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-y-1 hover:shadow-none transition-all"
+               >
+                 <RefreshCw className="w-5 h-5" />
+                 GENERATE NEW COMIC
+               </button>
+            </div>
+          )}
         </div>
       )}
     </main>
