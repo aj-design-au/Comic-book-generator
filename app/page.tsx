@@ -255,7 +255,7 @@ export default function Home() {
                 name="hero"
                 value={inputs.hero}
                 onChange={handleInputChange}
-                className="w-full p-2 border-2 border-black rounded focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                className="w-full p-2 border-2 border-black rounded focus:outline-none focus:ring-2 focus:ring-yellow-400 bg-gray-700 text-white placeholder-gray-400"
                 placeholder="e.g. Captain Code"
               />
             </div>
@@ -265,7 +265,7 @@ export default function Home() {
                 name="villain"
                 value={inputs.villain}
                 onChange={handleInputChange}
-                className="w-full p-2 border-2 border-black rounded focus:outline-none focus:ring-2 focus:ring-red-400"
+                className="w-full p-2 border-2 border-black rounded focus:outline-none focus:ring-2 focus:ring-red-400 bg-gray-700 text-white placeholder-gray-400"
                 placeholder="e.g. The Bug"
               />
             </div>
@@ -275,7 +275,7 @@ export default function Home() {
                 name="location"
                 value={inputs.location}
                 onChange={handleInputChange}
-                className="w-full p-2 border-2 border-black rounded focus:outline-none focus:ring-2 focus:ring-gray-400"
+                className="w-full p-2 border-2 border-black rounded focus:outline-none focus:ring-2 focus:ring-gray-400 bg-gray-700 text-white placeholder-gray-400"
                 placeholder="e.g. Silicon Valley Server Room"
               />
             </div>
