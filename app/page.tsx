@@ -166,7 +166,7 @@ export default function Home() {
       
       // Step 2: Generate Images (Client-side orchestration)
       setStep("generating-images");
-      const newPanels = storyData.panels.map(p => ({ ...p, status: 'pending' as const }));
+      const newPanels = storyData.panels.map(p => ({ ...p, status: 'pending' as Panel['status'] }));
       setStory({ ...storyData, panels: newPanels });
 
       // Process panels sequentially
