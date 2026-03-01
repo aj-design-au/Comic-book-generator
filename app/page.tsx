@@ -177,24 +177,35 @@ export default function Home() {
         newPanels[i].status = 'generating';
         setStory({ ...storyData, panels: [...newPanels] });
 
-        try {
-          const imageRes = await fetch("/api/generate-image", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ prompt: newPanels[i].image_prompt }),
-          });
-          
-          if (imageRes.ok) {
-            const imageData = await imageRes.json();
-            newPanels[i].image_url = imageData.url;
-            newPanels[i].status = 'completed';
-          } else {
-             console.error(`Failed to generate image for panel ${i+1}`);
-             newPanels[i].status = 'failed';
+        const MAX_PANEL_RETRIES = 3;
+        for (let attempt = 0; attempt < MAX_PANEL_RETRIES; attempt++) {
+          if (attempt > 0) {
+            console.log(`[panel ${i+1}] Retry ${attempt}/${MAX_PANEL_RETRIES - 1}...`);
+            newPanels[i].status = 'generating';
+            setStory({ ...storyData, panels: [...newPanels] });
+            await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
           }
-        } catch (err) {
-          console.error(err);
-          newPanels[i].status = 'failed';
+
+          try {
+            const imageRes = await fetch("/api/generate-image", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ prompt: newPanels[i].image_prompt }),
+            });
+
+            if (imageRes.ok) {
+              const imageData = await imageRes.json();
+              newPanels[i].image_url = imageData.url;
+              newPanels[i].status = 'completed';
+              break;
+            } else {
+              console.error(`[panel ${i+1}] Attempt ${attempt + 1} failed`);
+              newPanels[i].status = 'failed';
+            }
+          } catch (err) {
+            console.error(`[panel ${i+1}] Attempt ${attempt + 1} error:`, err);
+            newPanels[i].status = 'failed';
+          }
         }
         
         // Update state with result
